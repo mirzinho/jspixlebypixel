@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>JS Game (Split Logic Example)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #ddd;
+        }
+        canvas {
+            background: #000; /* helps to see canvas boundaries */
+            border: 2px solid #000;
+        }
+
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden; /* Hide scrollbars if desired */
+        }
+        canvas {
+            display: block; /* Removes default inline spacing */
+        }
+
+    </style>
+</head>
+<body>
+<!-- The canvas for our game -->
+<canvas id="gameCanvas" width="1024" height="768"></canvas>
+
+<!-- Load scripts in order -->
+<script src="js/map.js"></script>
+<script src="js/animated-trees.js"></script>
+<script src="js/player.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
