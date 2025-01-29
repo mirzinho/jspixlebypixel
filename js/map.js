@@ -1,41 +1,39 @@
 /******************************************************
  * map.js
- * - Manages a larger tile map, e.g. 2000×2000
- * - Has water frames, grass, colliders
- * - Also tracks cameraX, cameraY
+ * - Manages a larger scrolling tile map (e.g. 2000×2000)
+ * - Has camera logic (cameraX, cameraY)
+ * - Draws only the visible portion of the map
+ * - Also provides a debug function to draw colliders
  ******************************************************/
 
+// Canvas references
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-ctx.imageSmoothingEnabled = false;
-ctx.msImageSmoothingEnabled = false;     // IE/Edge
-ctx.webkitImageSmoothingEnabled = false; // older Safari
 
-// The on-screen canvas size
-let SCREEN_WIDTH = canvas.width;   // e.g. 640
-let SCREEN_HEIGHT = canvas.height; // e.g. 480
+// Full-screen or fixed size:
+const SCREEN_WIDTH = canvas.width;    // e.g. 640
+const SCREEN_HEIGHT = canvas.height;  // e.g. 480
 
-// We'll define a larger map, e.g., 2000×2000 px
+// Larger map
 const tileSize = 32;
 const MAP_WIDTH = 2000;
 const MAP_HEIGHT = 2000;
 
-// how many tiles horizontally & vertically
+// Tile map size in tiles:
 const mapCols = MAP_WIDTH / tileSize;
 const mapRows = MAP_HEIGHT / tileSize;
 
-// This 2D array: tileMap[r][c] => "grass" or "water"
+// Store tile data
 let tileMap = [];
-// tileImages[r][c] => array of canvases (grass=1, water=many)
+// Store tile images (grass, water frames, etc.)
 let tileImages = [];
 
-// We'll store bounding boxes for all collidable tiles (water).
+// Colliders for bounding-box collisions
 let colliders = [];
 
-// The camera position (top-left corner) in map coordinates
+// The camera offset in map coords
 let cameraX = 0;
 let cameraY = 0;
-
 
 /** Offscreen helper */
 function createOffscreenCanvas(width, height) {
@@ -49,25 +47,24 @@ function createOffscreenCanvas(width, height) {
 function drawRealisticGrass(ctx, size) {
     ctx.fillStyle = "#4CAF50";
     ctx.fillRect(0, 0, size, size);
+
     for (let i = 0; i < 10; i++) {
         ctx.beginPath();
         const bx = Math.random() * size;
         const by = Math.random() * size;
         ctx.moveTo(bx, by);
-        ctx.lineTo(
-            bx + (Math.random() * 2 - 1),
-            by - (Math.random() * 8 + 2)
-        );
+        ctx.lineTo(bx + (Math.random() * 2 - 1), by - (Math.random() * 8 + 2));
         ctx.strokeStyle = "#2E7D32";
         ctx.lineWidth = 1;
         ctx.stroke();
     }
 }
 
-/** Water animation frames */
+// Water frames
 const WATER_FRAMES_COUNT = 3;
 let waterFrames = [];
 
+/** Draw 1 wave frame */
 function drawWaterWaveFrame(ctx, size, frameIndex, totalFrames) {
     ctx.fillStyle = "#3399ff";
     ctx.fillRect(0, 0, size, size);
@@ -96,20 +93,19 @@ function generateWaterFrames() {
     }
 }
 
-/** Build a larger map: fill tileMap[][] & tileImages[][]. */
+/** Build the larger map */
 function generateMap() {
-    colliders = [];  // reset
+    colliders = []; // reset
 
     for (let r = 0; r < mapRows; r++) {
         tileMap[r] = [];
         tileImages[r] = [];
         for (let c = 0; c < mapCols; c++) {
-            // let's say boundary = water
+            // boundary => water
             if (r === 0 || r === mapRows - 1 || c === 0 || c === mapCols - 1) {
                 tileMap[r][c] = "water";
                 tileImages[r][c] = waterFrames; // multiple frames
-
-                // bounding box for collisions
+                // bounding box
                 colliders.push({
                     x: c * tileSize,
                     y: r * tileSize,
@@ -119,20 +115,20 @@ function generateMap() {
                 });
             } else {
                 tileMap[r][c] = "grass";
-                // generate grass tile
                 const grassCanvas = createOffscreenCanvas(tileSize, tileSize);
                 const gCtx = grassCanvas.getContext("2d");
                 drawRealisticGrass(gCtx, tileSize);
-                tileImages[r][c] = [grassCanvas]; // single frame
+                tileImages[r][c] = [grassCanvas];
             }
         }
     }
 }
 
+/**
+ * Draw only visible portion, offset by camera
+ */
 function drawMap() {
     const frameIndex = Math.floor(performance.now() / 250) % WATER_FRAMES_COUNT;
-
-    // Figure out which rows/cols are visible
     const startCol = Math.floor(cameraX / tileSize);
     const endCol = Math.floor((cameraX + SCREEN_WIDTH) / tileSize);
     const startRow = Math.floor(cameraY / tileSize);
@@ -140,18 +136,12 @@ function drawMap() {
 
     for (let r = startRow; r <= endRow; r++) {
         for (let c = startCol; c <= endCol; c++) {
-            if (r < 0 || r >= mapRows || c < 0 || c >= mapCols) {
-                continue;
-            }
-
+            if (r < 0 || r >= mapRows || c < 0 || c >= mapCols) continue;
             const mapX = c * tileSize;
             const mapY = r * tileSize;
-
-            // -------- The key change: use Math.floor --------
             const screenX = Math.floor(mapX - cameraX);
             const screenY = Math.floor(mapY - cameraY);
 
-            // Pick tile images and draw
             const frames = tileImages[r][c];
             if (frames.length > 1) {
                 ctx.drawImage(frames[frameIndex], screenX, screenY);
@@ -163,55 +153,12 @@ function drawMap() {
 }
 
 /**
- * Draw only the portion of the map on the screen.
- * For each visible tile, place it at (mapX - cameraX, mapY - cameraY).
+ * Center camera on player, clamp to map
  */
-function _drawMap() {
+function updateCamera(px, py, pWidth, pHeight) {
+    cameraX = px + pWidth/2 - SCREEN_WIDTH/2;
+    cameraY = py + pHeight/2 - SCREEN_HEIGHT/2;
 
-
-    const frameIndex = Math.floor(performance.now() / 250) % WATER_FRAMES_COUNT;
-
-    // Figure out which rows/cols are visible
-    const startCol = Math.floor(cameraX / tileSize);
-    const endCol = Math.floor((cameraX + SCREEN_WIDTH) / tileSize);
-    const startRow = Math.floor(cameraY / tileSize);
-    const endRow = Math.floor((cameraY + SCREEN_HEIGHT) / tileSize);
-
-    for (let r = startRow; r <= endRow; r++) {
-        for (let c = startCol; c <= endCol; c++) {
-            if (
-                r < 0 || r >= mapRows ||
-                c < 0 || c >= mapCols
-            ) {
-                continue;
-            }
-            const mapX = c * tileSize;
-            const mapY = r * tileSize;
-            const screenX = mapX - cameraX;
-            const screenY = mapY - cameraY;
-
-            const frames = tileImages[r][c];
-            if (frames.length > 1) {
-                // water tile => animate
-                ctx.drawImage(frames[frameIndex], screenX, screenY);
-            } else {
-                // grass tile => static
-                ctx.drawImage(frames[0], screenX, screenY);
-            }
-        }
-    }
-}
-
-/**
- * Update camera so the player is near center (or any logic you want).
- * We'll clamp so camera never shows outside the map.
- */
-function updateCamera(playerX, playerY, playerWidth, playerHeight) {
-    // Attempt to center camera on player's center
-    cameraX = playerX + playerWidth / 2 - SCREEN_WIDTH / 2;
-    cameraY = playerY + playerHeight / 2 - SCREEN_HEIGHT / 2;
-
-    // clamp
     if (cameraX < 0) cameraX = 0;
     if (cameraY < 0) cameraY = 0;
     if (cameraX > MAP_WIDTH - SCREEN_WIDTH) {
@@ -220,4 +167,18 @@ function updateCamera(playerX, playerY, playerWidth, playerHeight) {
     if (cameraY > MAP_HEIGHT - SCREEN_HEIGHT) {
         cameraY = MAP_HEIGHT - SCREEN_HEIGHT;
     }
+}
+
+/**
+ * Debug function: draw colliders in red
+ */
+function debugColliders() {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,0,0,0.4)";
+    for (const c of colliders) {
+        const sx = c.x - cameraX;
+        const sy = c.y - cameraY;
+        ctx.strokeRect(sx, sy, c.width, c.height);
+    }
+    ctx.restore();
 }

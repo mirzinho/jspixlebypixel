@@ -1,17 +1,24 @@
 /******************************************************
  * player.js
- * - Now the playerX, playerY exist in a larger map
- * - We'll clamp the player to MAP_WIDTH, MAP_HEIGHT
- * - Drawing the player subtracts cameraX, cameraY
+ * - Player position in map coords
+ * - Movement, partial trunk collision logic
+ * - Drawing the player with camera offset
  ******************************************************/
 
-// We'll keep your existing constants
+// We have a sprite sheet of 384×384 => 8 frames wide, 6 rows
 const PLAYER_SPRITE_FILE = "assets/char-walk.png";
 const FRAME_WIDTH = 48;
 const FRAME_HEIGHT = 64;
+const FRAMES_PER_ROW = 8;
+
+// We only do a partial bounding box for trunk collisions
+// The rest uses normal bounding box
+const COLLISION_OFFSET_X = 16;
+const COLLISION_OFFSET_Y = 16;
 const COLLISION_WIDTH = 16;
 const COLLISION_HEIGHT = 32;
-const FRAMES_PER_ROW = 8;
+
+const ANIMATION_SPEED = 150;
 
 const DIRECTION_TO_ROW = {
     "down":       0,
@@ -24,20 +31,14 @@ const DIRECTION_TO_ROW = {
     "right":      5
 };
 
-const ANIMATION_SPEED = 150;
-
-// Let's define the player's map position at (100,100) or wherever
 let playerX = 100;
 let playerY = 100;
 let playerDirection = "down";
 let frameIndex = 0;
 let frameTimer = 0;
-const playerSpeed = 2;
+let playerSpeed = 2;
 
-const COLLISION_OFFSET_X = 16;
-const COLLISION_OFFSET_Y = 16;
-
-// Keyboard input (unchanged)
+// keyboard
 const keys = {};
 window.addEventListener("keydown", (e) => {
     keys[e.key] = true;
@@ -60,9 +61,25 @@ function isIntersecting(a, b) {
 }
 
 /**
- * We update the player's movement and bounding-box collision
- * in the larger 2000×2000 map.
- * Then the camera offset is handled elsewhere (map.js).
+ * Special partial collision for tree trunks:
+ * - Only the BOTTOM 50% (the player's "feet") should collide
+ */
+function isCollidingTrunkPartial(playerBB, trunkBB) {
+    // bottom half of the player's bounding box
+    let halfHeight = playerBB.height / 2;
+    let feetBB = {
+        x: playerBB.x,
+        y: playerBB.y + halfHeight, // start halfway down
+        width: playerBB.width,
+        height: halfHeight
+    };
+    return isIntersecting(feetBB, trunkBB);
+}
+
+/**
+ * updatePlayer():
+ * - Moves the player in map coords
+ * - Partial trunk collision for 'treeTrunk' type
  */
 function updatePlayer(deltaTime) {
     const oldX = playerX;
@@ -70,27 +87,24 @@ function updatePlayer(deltaTime) {
 
     let moveX = 0;
     let moveY = 0;
-
     if (keys["ArrowLeft"])  moveX -= 1;
     if (keys["ArrowRight"]) moveX += 1;
     if (keys["ArrowUp"])    moveY -= 1;
     if (keys["ArrowDown"])  moveY += 1;
 
-    // Diagonal fix
+    // diagonal fix
     if (moveX !== 0 && moveY !== 0) {
         moveX *= 0.707;
         moveY *= 0.707;
     }
 
-    // Move in map coords
     playerX += moveX * playerSpeed;
     playerY += moveY * playerSpeed;
 
-    // Determine direction
+    // direction
     let dirStr = "";
     if (moveY > 0) dirStr = "down";
     else if (moveY < 0) dirStr = "up";
-
     if (moveX > 0) {
         if (!dirStr) dirStr = "right";
         else dirStr += "-right";
@@ -98,12 +112,10 @@ function updatePlayer(deltaTime) {
         if (!dirStr) dirStr = "left";
         else dirStr += "-left";
     }
-    if (!dirStr) {
-        dirStr = playerDirection;
-    }
+    if (!dirStr) dirStr = playerDirection;
     playerDirection = dirStr;
 
-    // Animate if moving
+    // animate
     let isMoving = (moveX !== 0 || moveY !== 0);
     if (isMoving) {
         frameTimer += (deltaTime || 16);
@@ -116,32 +128,35 @@ function updatePlayer(deltaTime) {
         frameTimer = 0;
     }
 
-    // Build player's bounding box in map coords
-    const playerBB = {
+    // bounding box in map coords
+    let playerBB = {
         x: playerX + COLLISION_OFFSET_X,
         y: playerY + COLLISION_OFFSET_Y,
         width: COLLISION_WIDTH,
         height: COLLISION_HEIGHT
     };
 
-    // Check colliders
+    // check collisions
     for (let c of colliders) {
-        let colliderBB = {
-            x: c.x,
-            y: c.y,
-            width: c.width,
-            height: c.height
-        };
-        if (isIntersecting(playerBB, colliderBB)) {
-            // revert
-            playerX = oldX;
-            playerY = oldY;
-            break;
+        if (c.type === "treeTrunk") {
+            // partial collision
+            if (isCollidingTrunkPartial(playerBB, c)) {
+                playerX = oldX;
+                playerY = oldY;
+                break;
+            }
+        } else {
+            // normal bounding box
+            let cBB = { x: c.x, y: c.y, width: c.width, height: c.height };
+            if (isIntersecting(playerBB, cBB)) {
+                playerX = oldX;
+                playerY = oldY;
+                break;
+            }
         }
     }
 
-    // clamp within MAP_WIDTH, MAP_HEIGHT
-    // so we can't walk beyond the big map
+    // clamp to map
     if (playerX < 0) playerX = 0;
     if (playerY < 0) playerY = 0;
     if (playerX > MAP_WIDTH - FRAME_WIDTH) {
@@ -152,13 +167,14 @@ function updatePlayer(deltaTime) {
     }
 }
 
+/** drawPlayer():
+ *  - Subtract camera for on-screen coords
+ */
 function drawPlayer() {
-    // Convert player’s map coords to on-screen coords
-    // by subtracting cameraX, cameraY
-    const screenX = playerX - cameraX;
-    const screenY = playerY - cameraY;
+    const screenX = Math.floor(playerX - cameraX);
+    const screenY = Math.floor(playerY - cameraY);
 
-    // figure out sprite row
+    // which row for direction
     let rowIndex = DIRECTION_TO_ROW[playerDirection] || 0;
     let sx = frameIndex * FRAME_WIDTH;
     let sy = rowIndex * FRAME_HEIGHT;
@@ -171,20 +187,24 @@ function drawPlayer() {
         FRAME_WIDTH, FRAME_HEIGHT
     );
 
-    // (Optional) debug bounding box
+    // optional debug for player's bounding box
     /*
-        debugBoundingBox()
-    */
-}
-
-function debugPlayerBoundingBox() {
     ctx.save();
-    ctx.strokeStyle = "red";
+    ctx.strokeStyle = "cyan";
     ctx.strokeRect(
-        screenX + COLLISION_OFFSET_X,
-        screenY + COLLISION_OFFSET_Y,
-        COLLISION_WIDTH,
-        COLLISION_HEIGHT
+      screenX + COLLISION_OFFSET_X,
+      screenY + COLLISION_OFFSET_Y,
+      COLLISION_WIDTH,
+      COLLISION_HEIGHT
+    );
+    // show the "feet" partial area
+    let halfH = COLLISION_HEIGHT / 2;
+    ctx.strokeRect(
+      screenX + COLLISION_OFFSET_X,
+      screenY + COLLISION_OFFSET_Y + halfH,
+      COLLISION_WIDTH,
+      halfH
     );
     ctx.restore();
+    */
 }
