@@ -19,8 +19,10 @@ function gameLoop(timestamp) {
     // 2) Draw
     ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     drawMap();          // map draws offset by camera
-    drawAnimatedTrees(); // also offset by camera
+    drawAnimatedTreeTrunks(); // also offset by camera
     drawPlayer();       // offset by camera
+    drawAnimatedTreeCrotches();// canopy on top => z-index 3
+
 
     requestAnimationFrame(gameLoop);
 }
@@ -31,7 +33,7 @@ function init() {
     generateMap(); // bigger map
 
     // placeRandomTrees(); or place other objects
-    placeRandomAnimatedTrees(); // if using your animatedTrees code
+    placeRandomAnimatedTreesTrunkOnlyCollision(); // if using your animatedTrees code
 
     requestAnimationFrame(gameLoop);
 }
